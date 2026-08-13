@@ -1,12 +1,62 @@
-import productModel from "../models/product.model.js";
+import ProductMongo from "../dao/mongo/ProductMongo.js"
+const productDao= new ProductMongo()
 
+
+// GET /api/products
 export const getProducts = async(req,res) => {
     try {
-        const products = await productModel.find()
+        const limit = parseInt(req.query.limit)||10
+        const page = parseInt(req.query.page)||1
+        const query = req.query.query
+        const sort = req.query.sort
+        const filter={}
+        
+        if(query){
+            if(query==='available'){
+                filter.stock={$gt:0}
+            } else{
+                filter.category=query
+            }
+        }
 
-        res.status(200).json({
-        status:'success',
-        payload: products
+        let sortOption={}
+        if(sort==='asc'){
+            sortOption.price=1
+        }
+        if(sort==='desc'){
+            sortOption.price=-1
+        }
+        const skip=(page-1)*limit
+
+        const products = await productDao. getProducts(filter, sortOption, skip, limit)
+
+        const totalProducts = await productDao.countProducts(filter)
+        const totalPages = Math.ceil(totalProducts/limit)
+        const hasPrevPage=page>1 && page <= totalPages
+        const hasNextPage=page<totalPages
+
+        const buildLink=(targetPage)=>{
+            const params = new URLSearchParams()
+            param.set('limit',limit)
+            params.set('page', targetPage)
+            if (query){
+                params.set('query',query)
+            }
+
+            if(sort){
+                params.set('sort',sort)
+            }
+            return `/api/products?${params.toString()}`
+        }
+
+        return res.status(200).json({
+            status:'success',
+            payload: products, totalPages,
+            prevPage: hasPrevPage ? page - 1:null,
+            nextPage: hasNextPage ? page + 1:null,
+            page, hasPrevPage, hasNextPage,
+            prevLink: hasPrevPage ? `/api/products?limit=${limit}&page=${page-1}`:null,
+            nextLink: hasNextPage ? `/api/products?limit=${limit}&page=${page+1}`:null
         })
     } catch(error){
         console.error("Error al obtener productos", error);
@@ -19,10 +69,11 @@ export const getProducts = async(req,res) => {
 }
 
 
+// GET /api/products/:pid
 export const getProductById= async(req,res)=>{
     try{
         const {pid}=req.params
-        const product= await productModel.findById(pid)
+        const product= await productDao.getProductById(pid)
 
         if (!product){
             return res.status(404).json({
@@ -45,6 +96,7 @@ export const getProductById= async(req,res)=>{
 }
 
 
+// POST /api/products
 export const createProduct= async(req,res)=>{
     try{
         const{
@@ -59,9 +111,13 @@ export const createProduct= async(req,res)=>{
                 message:'Faltan campos obligatorios'
             })
         }
-        const newProduct= await productModel.create({
+        const newProduct= await productDao.createProduct({
             title, description, code, price, status, stock, category, thumbnails
         })
+
+        //socket
+        const socketServer= req.app.get('socketServer')
+        socketServer.emit('productsUpdated')
 
         return res.status(201).json({
             status:'success',
@@ -84,25 +140,28 @@ export const createProduct= async(req,res)=>{
 }
 
 
+// PUT /api/products/:pid
 export const updateProduct = async(req, res)=>{
     try{
         const{pid} = req.params
-        const updates = req.body
+        const updates = {...req.body}
         
         // evita modificar el id  
         delete updates._id 
 
-        const updatedProduct = await productModel.findByIdAndUpdate(
-            pid, updates, {
-                new: true, runValidators: true
-            }
-        )
+        const updatedProduct = await productDao.updateProduct(pid, updates)
+
         if(!updatedProduct){
             return res.status(404).json({
                 status: 'error',
                 messagge: 'Producto no encontrado'
             })
         }
+
+        //socket
+        const socketServer = req.app.get("socketServer");
+        socketServer.emit("productsUpdated");
+
         return res.status(200).json({
                 status: 'success',
                 messagge: updateProduct
@@ -124,10 +183,11 @@ export const updateProduct = async(req, res)=>{
 }
 
 
+// DELETE /api/products/:pid
 export const deleteProduct = async(req,res)=>{
     try{
         const {pid}= req.params
-        const deletedProduct= await productModel.findByIdAndDelete(pid)
+        const deletedProduct= await productDao.deleteProduct(pid)
 
         if (!deletedProduct){
             return res.status(404).json({
@@ -135,6 +195,10 @@ export const deleteProduct = async(req,res)=>{
                 message: 'Producto no encontrado'
             })
         }
+
+        const socketServer = req.app.get("socketServer");
+        socketServer.emit("productsUpdated");
+
         return res.status(200).json({
                 status:'success',
                 message: 'Producto eliminado correctamente',
