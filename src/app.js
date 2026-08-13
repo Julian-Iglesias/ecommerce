@@ -48,7 +48,7 @@ app.get("/", (req, res) => {
 
 mongoose.connect(process.env.mongo_key,{dbName: 'e-commerce'})
 .then(()=>{
-    console.log('coneactado a MongoDB')
+    console.log('Coneactado a MongoDB')
 
     const httpServer=app.listen(8080,()=>{
       console.log('Conectado en el puerto 8080')
@@ -60,7 +60,7 @@ mongoose.connect(process.env.mongo_key,{dbName: 'e-commerce'})
     socketServer.on('connection', (socket)=>{
       console.log('Cliente conectado por WebSocket: '+socket.id)
       socket.on('disconnect',()=>{
-        console.log('Cliente desconectado'+socket.id)
+        console.log('Cliente desconectado: '+socket.id)
       })
     })
 })
